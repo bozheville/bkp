@@ -1,8 +1,8 @@
 <?php
 date_default_timezone_set("Europe/Brussels");
 require_once "mongo.php";
-$Backup = new Backup();
-$Backup->exec();
+$Backup = new Tool();
+$Backup->exec("backup");
 
 class Backup {
     private $date = null;
@@ -14,7 +14,6 @@ class Backup {
     const TMPDIR = '/var/dniwebkp/tmp/';
 
     public function __construct() {
-
         if (!is_dir(self::DUMPPATH)) {
             mkdir(self::DUMPPATH);
         }
@@ -47,7 +46,9 @@ class Backup {
         $databases = array();
         $dbs = mongo_find("dbs", array("allowed" => true));
         foreach ($dbs as $db) {
-            $databases[] = $db["_id"];
+            if ($this->canBackup($db)) {
+                $databases[] = $db["_id"];
+            }
         }
         return $databases;
     }
@@ -69,4 +70,53 @@ class Backup {
         $action['update'] = array('$push' => array("dates" => $this->date));
         mongo_update($action['collection'], $action['update'], $action['condition']);
     }
+
+    private function canBackup($db) {
+        $timestamp = explode("-", date("i-H-j-n-Y-w"));
+        $keys = array("mm", "hh", "d", "m", "y", "dd");
+        $ts = array();
+        foreach ($keys as $key) {
+            $ts[$key] = array_shift($timestamp);
+        }
+        $ts["dd"] = $ts["dd"] == 0 ? 7 : $ts["dd"];
+        $matched = true;
+        $rules = $db["rules"];
+        foreach ($ts as $key => $val) {
+            $is_star = $rules[$key] == "*";
+            if (!in_array($val, explode(",", $rules[$key])) && empty($is_star)) {
+                $matched = false;
+            }
+        }
+        return $matched;
+    }
+}
+
+
+class Tool {
+    private $Backup;
+    private $Restore;
+
+    public function __construct() {
+        $this->Backup = new Backup();
+    }
+
+    public function exec($type) {
+        switch ($type) {
+            case "backup":
+                $this->Backup->exec();
+                break;
+        }
+    }
+}
+
+function p($val = "") {
+    print_r($val);
+    if (!is_array($val)) {
+        print_r("\n");
+    }
+}
+
+function pd($val = "") {
+    p($val);
+    die();
 }
