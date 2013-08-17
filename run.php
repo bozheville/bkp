@@ -82,6 +82,7 @@ class Backup {
         $matched = true;
         $rules = $db["rules"];
         foreach ($ts as $key => $val) {
+            $rules[$key] = empty($rules[$key]) ? "*" : $rules[$key];
             $is_star = $rules[$key] == "*";
             if (!in_array($val, explode(",", $rules[$key])) && empty($is_star)) {
                 $matched = false;
