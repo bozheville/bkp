@@ -11,14 +11,12 @@ class Backup {
     private $date = null;
     private $timestamp = null;
     private $db = null;
-    private $path = null;
-    private $dumppath = null;
 
     public function __construct() {
         if (!is_dir(DUMPPATH)) {
             mkdir(DUMPPATH);
         }
-        mongo_set_db("backup");
+        $this->db = new DB(DBNAME);
         $this->date = date("d_m_Y");
         $this->timestamp = time();
     }
@@ -26,53 +24,46 @@ class Backup {
     public function exec() {
         $dbs = $this->getDBs();
         foreach ($dbs as $db) {
-            $this->selectDB($db);
-
-            $this->dump();
+            $this->dump($db);
         }
     }
 
     public function setDB($db, $bkpallowed = true) {
-        mongo_update("dbs", array("_id" => $db, "allowed" => (boolean) $bkpallowed), array("_id" => $db));
+        $this->db->update("dbs", array("_id" => $db, "allowed" => (boolean) $bkpallowed), array("_id" => $db));
     }
 
-    private function selectDB($db) {
-        $this->db = $db;
-        $this->dumppath = DUMPPATH . $this->db . "/";
-        if (!is_dir($this->dumppath)) {
-            mkdir($this->dumppath);
-        }
-        $this->path = $this->dumppath . 'dump_' . $this->db . "_" . $this->date . "_" . $this->timestamp . ".tar.gz";
+    private function getDumpFileName($db, $fd = false) {
+        $dumppath = DUMPPATH . $db . "/";
+        if (!is_dir($dumppath)) mkdir($dumppath);
+        $dumpFileName = ($fd ? "fd_" : "") . $dumppath . 'dump_' . $db . "_" . $this->date . "_" . $this->timestamp . ".tar.gz";
+        return $dumpFileName;
     }
 
     private function getDBs() {
         $databases = array();
-        $dbs = mongo_find("dbs", array("allowed" => true));
+        $dbs = $this->db->find("dbs", array("allowed" => true));
         foreach ($dbs as $db) {
             if ($this->canBackup($db)) {
-                $this->removeOldDumps($db["_id"], $db["autoremove"]["days"], $db["autoremove"]["count"]);
+//                $this->removeOldDumps($db["_id"], $db["autoremove"]["days"], $db["autoremove"]["count"]);
                 $databases[] = $db["_id"];
             }
         }
         return $databases;
     }
 
-    private function dump() {
-        $archive = $this->db . "_" . $this->date . ".tar.gz";
-        $dump = ' dump/' . $this->db;
-        shell_exec('mongodump --db ' . $this->db);
-        shell_exec('tar -zcvf ' . $archive . $dump);
-        shell_exec('rm -rf ' . $dump);
-        shell_exec('mv ' . $archive . ' ' . $this->path);
-        $this->log();
+    private function dump($db, $fd = false) {
+        $tmpDumpPath = 'dump/' . $db;
+        $compressedDump = $db . ".tar.gz";
+        shell_exec('mongodump --db ' . $db);
+        shell_exec('tar -zcvf ' . $compressedDump . " " . $tmpDumpPath);
+        shell_exec('rm -rf ' . $tmpDumpPath);
+        shell_exec('mv ' . $compressedDump . ' ' . $this->getDumpFileName($db, $fd));
+        $this->log($db);
     }
 
-    private function log() {
-        $action = array();
-        $action['collection'] = "dumphistory";
-        $action['condition'] = array('_id' => $this->db);
-        $action['update'] = array('$push' => array("dates" => $this->date));
-        mongo_update($action['collection'], $action['update'], $action['condition']);
+    private function log($db) {
+        $update = array('$push' => array("dates" => date("d.m.Y h:i:s")));
+        $this->db->update("dumphistory", $update, array('_id' => $db));
     }
 
     private function canBackup($db) {
@@ -96,7 +87,7 @@ class Backup {
     }
 
     private function removeOldDumps($db, $days, $maxcount) {
-        $path=DUMPPATH . $db;
+        $path = DUMPPATH . $db;
         $maxSeconds = $days * 24 * 60 * 60;
         if ($handle = opendir($path)) {
             while (false !== ($entry = readdir($handle))) {
@@ -104,8 +95,8 @@ class Backup {
                 $entry = explode("_", $entry);
                 if ($entry[1] == $db) {
                     if (time() - (int) $entry[5] > $maxSeconds) {
-                        $entry = implode("_",$entry) . ".tar.gz";
-                        unlink($path .$entry);
+                        $entry = implode("_", $entry) . ".tar.gz";
+                        unlink($path . $entry);
 //                        p("Removed: " . $path .$entry);
                     }
                 }
