@@ -1,12 +1,4 @@
 <?php
-/**
- * Created by JetBrains PhpStorm.
- * User: bozheville
- * Date: 8/17/13
- * Time: 5:19 PM
- * To change this template use File | Settings | File Templates.
- */
-
 class Backup {
     private $date = null;
     private $timestamp = null;
@@ -17,7 +9,7 @@ class Backup {
             mkdir(DUMPPATH);
         }
         $this->db = new DB(DBNAME);
-        $this->date = date("d_m_Y");
+        $this->date = date("Y_m_d");
         $this->timestamp = time();
     }
 
@@ -44,7 +36,7 @@ class Backup {
         $dbs = $this->db->find("dbs", array("allowed" => true));
         foreach ($dbs as $db) {
             if ($this->canBackup($db)) {
-//                $this->removeOldDumps($db["_id"], $db["autoremove"]["days"], $db["autoremove"]["count"]);
+                $this->removeOldDumps($db["_id"], $db["autoremove"]["days"], $db["autoremove"]["count"]);
                 $databases[] = $db["_id"];
             }
         }
@@ -54,16 +46,18 @@ class Backup {
     private function dump($db, $fd = false) {
         $tmpDumpPath = 'dump/' . $db;
         $compressedDump = $db . ".tar.gz";
-        shell_exec('mongodump --db ' . $db);
-        shell_exec('tar -zcvf ' . $compressedDump . " " . $tmpDumpPath);
-        shell_exec('rm -rf ' . $tmpDumpPath);
-        shell_exec('mv ' . $compressedDump . ' ' . $this->getDumpFileName($db, $fd));
+        $exec = array();
+        $exec[] = "cd " . ROOT_PATH;
+        $exec[] = 'mongodump --db ' . $db;
+        $exec[] = 'tar -zcvf ' . $compressedDump . " " . $tmpDumpPath;
+        $exec[] = 'rm -rf ' . $tmpDumpPath;
+        $exec[] = 'mv ' . $compressedDump . ' ' . $this->getDumpFileName($db, $fd);
+        shell_exec(implode("; ", $exec));
         $this->log($db);
     }
 
     private function log($db) {
-        $update = array('$push' => array("dates" => date("d.m.Y h:i:s")));
-        $this->db->update("dumphistory", $update, array('_id' => $db));
+        $this->db->update("dumphistory", array('$push' => array("dates" => date("d.m.Y h:i:s"))), array('_id' => $db));
     }
 
     private function canBackup($db) {
@@ -86,33 +80,26 @@ class Backup {
         return $matched;
     }
 
-    private function removeOldDumps($db, $days, $maxcount) {
-        $path = DUMPPATH . $db;
-        $maxSeconds = $days * 24 * 60 * 60;
-        if ($handle = opendir($path)) {
-            while (false !== ($entry = readdir($handle))) {
-                $entry = str_replace(".tar.gz", "", $entry);
-                $entry = explode("_", $entry);
-                if ($entry[1] == $db) {
-                    if (time() - (int) $entry[5] > $maxSeconds) {
-                        $entry = implode("_", $entry) . ".tar.gz";
-                        unlink($path . $entry);
-//                        p("Removed: " . $path .$entry);
-                    }
+    private function removeOldDumps($db, $days = 1, $maxcount = 1) {
+        $dumps = array();
+        if ($handle = opendir(DUMPPATH . $db)) {
+            while (false !== ($entryfile = readdir($handle))) {
+                if (preg_match('#\.tar\.gz$#', $entryfile)) {
+                    $ts = preg_replace('#^\S+_([0-9]+)\.tar\.gz$#', "$1", $entryfile);
+                    $dumps[$ts] = $entryfile;
                 }
             }
             closedir($handle);
+            ksort($dumps);
+            foreach ($dumps as $ts => $dump) {
+                if ((time() - $ts) > ($days * 24 * 60 * 60)) {
+                    unlink(DUMPPATH . $db."/" . $dump);
+                    unset($dumps[$ts]);
+                }
+            }
+            while (count($dumps) > $maxcount-1) {
+                unlink(DUMPPATH . $db ."/". array_shift($dumps));
+            }
         }
-//        if ($handle = opendir($path)) {
-//            while (false !== ($entry = readdir($handle))) {
-//                $entry = str_replace(".tar.gz", "", $entry);
-//                $entry = explode("_", $entry);
-//                if ($entry[1] == $db) {
-//
-//                }
-//            }
-//            closedir($handle);
-//        }
-//        die();
     }
 }
