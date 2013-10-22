@@ -3,9 +3,9 @@ bkp
 
 Backup tool for MongoDB on debian linux server
 
-
+<pre>
 {
-  "_id":"testdb"
+  "_id":"testdb",
   "allowed": true,
    "autoremove": {
      "count": 3, // You can store max 3 dumps
@@ -20,3 +20,4 @@ Backup tool for MongoDB on debian linux server
      "dd": "2"  // day week.
   }
 }
+</pre>
