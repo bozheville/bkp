@@ -57,7 +57,7 @@ class Backup {
     }
 
     private function log($db) {
-        $this->db->update("dumphistory", array('$push' => array("dates" => date("d.m.Y h:i:s"))), array('_id' => $db));
+        $this->db->update("dumphistory", array('$push' => array("dates" => date("d.m.Y H:i:s"))), array('_id' => $db));
     }
 
     private function canBackup($db) {
